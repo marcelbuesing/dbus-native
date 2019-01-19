@@ -1,14 +1,15 @@
-use std::io;
-use byteorder::{ReadBytesExt, ByteOrder};
 use crate::type_system::{ObjectPath, Signature};
 use crate::writer::DbusWrite;
+use byteorder::{ByteOrder, ReadBytesExt};
+use std::io;
 
 type Result<T> = std::result::Result<T, std::io::Error>;
 
 pub trait DbusRead<T> {
     fn read<T1, T2>(&self, reader: &mut DbusReader<T1>) -> Result<T>
-        where T1: io::Read,
-              T2: ByteOrder;
+    where
+        T1: io::Read,
+        T2: ByteOrder;
 }
 
 pub struct DbusReader<T: io::Read> {
@@ -17,13 +18,14 @@ pub struct DbusReader<T: io::Read> {
 
 impl<T: io::Read> DbusReader<T> {
     pub fn new(reader: T) -> DbusReader<T> {
-        DbusReader {
-            reader
-        }
+        DbusReader { reader }
     }
 
     pub fn read_invalid(&self) -> Result<()> {
-        Err(io::Error::new(io::ErrorKind::InvalidInput, "HeaderField::Invalid can not be marshaled!"))
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "HeaderField::Invalid can not be marshaled!",
+        ))
     }
 
     /// A single 8-bit byte.
@@ -38,8 +40,8 @@ impl<T: io::Read> DbusReader<T> {
             0 => Ok(false),
             1 => Ok(true),
             x => {
-              let str_err = format!("Invalid boolean `{}`", x);
-              Err(io::Error::new(io::ErrorKind::InvalidData, str_err))
+                let str_err = format!("Invalid boolean `{}`", x);
+                Err(io::Error::new(io::ErrorKind::InvalidData, str_err))
             }
         }
     }
@@ -118,6 +120,4 @@ impl<T: io::Read> DbusReader<T> {
     //     }
     //     Ok(vec)
     // }
-
 }
-

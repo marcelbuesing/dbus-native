@@ -1,37 +1,107 @@
 //! https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling
-use byteorder::{LittleEndian, BigEndian, ReadBytesExt, ByteOrder, WriteBytesExt};
-
-use crate::names::{BusName, InterfaceName, ErrorName, MemberName};
-use crate::writer::{DbusWriter, DbusWrite};
-use crate::reader::{DbusReader, DbusRead};
-use crate::type_system::{ObjectPath, Signature, UnixFd, Serial};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
+
+use crate::names::{BusName, ErrorName, InterfaceName, MemberName};
+use crate::reader::{DbusRead, DbusReader};
+use crate::type_system::{ObjectPath, Serial, Signature, UnixFd};
+use crate::writer::{DbusWrite, DbusWriter};
 
 #[cfg(test)]
 mod tests {
+    use crate::message::*;
+    use libdbus_sys;
+    use std::ffi::CString;
+    use std::io::BufWriter;
+
     fn reverse<T: Clone>(xs: &[T]) -> Vec<T> {
-        let mut rev = vec!();
+        let mut rev = vec![];
         for x in xs.iter() {
             rev.insert(0, x.clone())
         }
         rev
     }
 
-    #[cfg(test)]
-    mod tests {
-        use crate::message::tests::reverse;
-        quickcheck! {
-            fn prop(xs: Vec<u32>) -> bool {
-                xs == reverse(&reverse(&xs))
-            }
+    quickcheck! {
+        fn prop(xs: Vec<u32>) -> bool {
+            xs == reverse(&reverse(&xs))
         }
+    }
+
+    fn create_libdbus_signal() -> Vec<u8> {
+        let p = CString::new("/path").expect("CString::new failed");
+        let i = CString::new("com.example.MusicPlayer1").expect("CString::new failed");
+        let m = CString::new("member").expect("CString::new failed");
+
+        let msg =
+            unsafe { libdbus_sys::dbus_message_new_signal(p.as_ptr(), i.as_ptr(), m.as_ptr()) };
+
+        let mut marshalled_data: Vec<u8> = Vec::with_capacity(1024);
+        let raw_marshalled_data = marshalled_data.as_mut_ptr() as *mut *mut i8;
+
+        let mut marshalled_data_len: i32 = 0;
+        let raw_marshalled_data_len = &mut marshalled_data_len as *mut i32;
+
+        let sufficient_memory = unsafe {
+            libdbus_sys::dbus_message_marshal(msg, raw_marshalled_data, raw_marshalled_data_len)
+        };
+
+        if sufficient_memory < 1 {
+            panic!(format!(
+                "Insufficient memory for storing DBus message -> {}",
+                sufficient_memory
+            ));
+        }
+
+        unsafe {
+            println!("Length: {}", *raw_marshalled_data_len);
+        }
+
+        unsafe {
+            std::slice::from_raw_parts(
+                marshalled_data.as_mut_ptr(),
+                *raw_marshalled_data_len as usize,
+            )
+            .to_vec()
+            .to_owned()
+        }
+    }
+
+    #[test]
+    fn test_add() {
+        // dbus_message_marshal(msg: *mut DBusMessage, marshalled_data_p: *mut *mut c_char, len_p: *mut c_int) -> u32;
+
+        let v = create_libdbus_signal();
+        println!("DBUS Message Length(): {:X?}", v);
+
+        let header = Header {
+            endianess_flag: EndianessFlag::BigEndian,
+            message_type: MessageType::Signal,
+            flags: HeaderFlags::NO_AUTO_START,
+            major_protocol_version: MajorProtocolVersion(1),
+            length_message_body: 0,
+            serial: Serial(1),
+            header_fields: Vec::new(),
+        };
+
+        let body = Body {};
+
+        let m = Message { header, body };
+
+        let mut buff = std::io::Cursor::new(vec![0; 15]);
+        // let v = Vec::with_capacity(1024);
+        // let buffer_writer = BufWriter::new(v);
+        let len = m.write(&mut buff).unwrap();
+        println!("DBUS Message Length({}): {:X?}", len, buff);
+
+        assert_eq!(true, true);
     }
 }
 
 /// The maximum length of a message, including header, header alignment padding,
 /// and body is 2 to the 27th power or 134217728 (128 MiB).
 /// Implementations must not send or accept messages exceeding this size.
-const MAX_MESSAGE_SIZE: u32 = 2^27;
+const MAX_MESSAGE_SIZE: u32 = 2 ^ 27;
 
 /// A message consists of a header and a body. If you think of a message as a package,
 /// the header is the address, and the body contains the package contents.
@@ -46,21 +116,23 @@ struct Message {
 }
 
 impl Message {
-    fn write<T>(&self, writer:T) -> Result<(), io::Error>
-    where T: io::Write
+    fn write<T>(&self, writer: T) -> Result<u64, io::Error>
+    where
+        T: io::Write,
     {
+        let mut bytes_written = 0;
         let mut writer = DbusWriter::new(writer);
         match self.header.endianess_flag {
             EndianessFlag::LittleEndian => {
-                self.header.write::<T, LittleEndian>(&mut writer)?;
-                self.body.write::<T, LittleEndian>(&mut writer)?;
-            },
+                bytes_written += self.header.write::<T, LittleEndian>(&mut writer)?;
+                bytes_written += self.body.write::<T, LittleEndian>(&mut writer)?;
+            }
             EndianessFlag::BigEndian => {
-                self.header.write::<T, BigEndian>(&mut writer)?;
-                self.body.write::<T, BigEndian>(&mut writer)?;
-            },
+                bytes_written += self.header.write::<T, BigEndian>(&mut writer)?;
+                bytes_written += self.body.write::<T, BigEndian>(&mut writer)?;
+            }
         };
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
@@ -69,36 +141,8 @@ impl Message {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EndianessFlag {
-    LittleEndian,
-    BigEndian,
-}
-
-impl DbusWrite for EndianessFlag {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
-    {
-        match self {
-            EndianessFlag::LittleEndian => writer.write_u8(b'l'),
-            EndianessFlag::BigEndian => writer.write_u8(b'B'),
-        }
-    }
-}
-
-impl DbusRead<EndianessFlag> for EndianessFlag {
-    fn read<T1, T2>(&self, reader: &mut DbusReader<T1>) -> Result<EndianessFlag, io::Error>
-        where T1: io::Read,
-              T2: ByteOrder
-    {
-        match reader.read_u8()? {
-            b'l' => Ok(EndianessFlag::LittleEndian),
-            b'B' => Ok(EndianessFlag::BigEndian),
-            x => {
-              let str_err = format!("Invalid endianess `{}`", x);
-              Err(io::Error::new(io::ErrorKind::InvalidData, str_err))
-            },
-        }
-    }
+    LittleEndian = b'l',
+    BigEndian = b'B',
 }
 
 /// Message type. Unknown types must be ignored.
@@ -125,9 +169,10 @@ enum MessageType {
 pub struct MajorProtocolVersion(pub u8);
 
 impl DbusWrite for MajorProtocolVersion {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
         writer.write_u8(self.0)
     }
@@ -229,26 +274,28 @@ enum HeaderField {
 }
 
 impl DbusWrite for HeaderField {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
         match self {
-            HeaderField::Invalid => return Err(io::Error::new(io::ErrorKind::InvalidInput, "HeaderField::Invalid can not be marshaled!")),
-            HeaderField::Path(object_path) => object_path.write::<_, T2>(writer)?,
-            HeaderField::Interface(interface_name) => interface_name.write::<_, T2>(writer)?,
-            HeaderField::Member(member_name) => member_name.write::<_, T2>(writer)?,
-            HeaderField::ErrorName(error_name) => error_name.write::<_, T2>(writer)?,
-            HeaderField::ReplySerial(serial) => serial.write::<_, T2>(writer)?,
-            HeaderField::Destination(destination) => writer.write_string::<T2>(destination)?,
-            HeaderField::Sender(sender) => writer.write_string::<T2>(sender)?,
-            HeaderField::Signature(signature) => signature.write::<_, T2>(writer)?,
-            HeaderField::UnixFds(fd) => writer.write_u32::<T2>(*fd)?,
-        };
-        Ok(())
+            HeaderField::Invalid => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "HeaderField::Invalid can not be marshaled!",
+            )),
+            HeaderField::Path(object_path) => object_path.write::<_, T2>(writer),
+            HeaderField::Interface(interface_name) => interface_name.write::<_, T2>(writer),
+            HeaderField::Member(member_name) => member_name.write::<_, T2>(writer),
+            HeaderField::ErrorName(error_name) => error_name.write::<_, T2>(writer),
+            HeaderField::ReplySerial(serial) => serial.write::<_, T2>(writer),
+            HeaderField::Destination(destination) => writer.write_string::<T2>(destination),
+            HeaderField::Sender(sender) => writer.write_string::<T2>(sender),
+            HeaderField::Signature(signature) => signature.write::<_, T2>(writer),
+            HeaderField::UnixFds(fd) => writer.write_u32::<T2>(*fd),
+        }
     }
 }
-
 
 /// The length of the header must be a multiple of 8, allowing the body to begin on
 /// an 8-byte boundary when storing the entire message in a single buffer.
@@ -277,35 +324,37 @@ struct Header {
 }
 
 impl DbusWrite for Header {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
-         writer.write_u8(self.endianess_flag as u8)?;
-         writer.write_u8(self.message_type as u8)?;
-         writer.write_u8(self.flags.bits())?;
-         writer.write_u8(self.major_protocol_version.0)?;
+        let mut bytes_written = 0;
+        bytes_written += writer.write_u8(self.endianess_flag as u8)?;
+        bytes_written += writer.write_u8(self.message_type as u8)?;
+        bytes_written += writer.write_u8(self.flags.bits())?;
+        bytes_written += writer.write_u8(self.major_protocol_version.0)?;
 
-         writer.write_u32::<T2>(self.length_message_body)?;
-         writer.write_u32::<T2>(self.serial.0)?;
+        bytes_written += writer.write_u32::<T2>(self.length_message_body)?;
+        bytes_written += writer.write_u32::<T2>(self.serial.0)?;
 
-         for (ref code, ref field) in self.header_fields.iter().by_ref() {
-              writer.write_u8(code.clone() as u8)?;
-              field.write::<T1, T2>(writer)?;
-         }
-         Ok(())
+        for (ref code, ref field) in self.header_fields.iter().by_ref() {
+            bytes_written += writer.write_u8(*code as u8)?;
+            bytes_written += field.write::<T1, T2>(writer)?;
+        }
+        writer.write_padding(bytes_written);
+        Ok(bytes_written)
     }
 }
 
-
-struct Body {
-
-}
+struct Body {}
 
 impl DbusWrite for Body {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder {
-                  unimplemented!();
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
+    {
+        Ok(0)
     }
 }

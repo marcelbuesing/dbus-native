@@ -170,7 +170,7 @@ lazy_static! {
 pub struct InterfaceName(String);
 
 impl DbusWrite for InterfaceName {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -259,7 +259,7 @@ impl FromStr for InterfaceName {
 pub struct BusName(String);
 
 impl DbusWrite for BusName {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -339,7 +339,7 @@ impl FromStr for BusName {
 pub struct MemberName(String);
 
 impl DbusWrite for MemberName {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -407,7 +407,7 @@ impl FromStr for MemberName {
 pub struct ErrorName(String);
 
 impl DbusWrite for ErrorName {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,

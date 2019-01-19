@@ -1,9 +1,10 @@
 use byteorder::ByteOrder;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::hash::{BuildHasher, Hash};
 use std::io;
 
-use crate::writer::{DbusWriter, DbusWrite};
+use crate::writer::{DbusWrite, DbusWriter};
 
 #[cfg(test)]
 mod tests {
@@ -68,13 +69,22 @@ pub trait ToTypeCode: Sized {
 }
 
 /// The serial of this message, used as a cookie by the sender to identify
-/// the reply corresponding to this request.
+/// the reply corresponding to this request. This must not be zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Serial(pub u32);
 
-struct Variant {
-    
+impl TryFrom<u32> for Serial {
+    type Error = io::Error;
+
+    fn try_from(s: u32) -> io::Result<Serial> {
+        if s == 0 {
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
+        Ok(Serial(s))
+    }
 }
+
+struct Variant {}
 
 /// VARIANT has ASCII character 'v' as its type code.
 /// A marshaled value of type VARIANT will have the signature of a single complete type as part of the value.
@@ -96,9 +106,10 @@ pub struct ObjectPath(pub String);
 // TODO impl from str for ObjectPath see "Valid Object Paths"
 
 impl DbusWrite for ObjectPath {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
         writer.write_string::<T2>(&self.0)
     }
@@ -120,9 +131,10 @@ pub struct Signature(pub String);
 // TODO impl from str for Signature see "Valid Signatures"
 
 impl DbusWrite for Signature {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
         writer.write_string::<T2>(&self.0)
     }
@@ -144,7 +156,6 @@ impl ToTypeCode for UnixFd {
         "h".to_string()
     }
 }
-
 
 /// based on "Basic type" - Table
 impl ToTypeCode for u8 {
@@ -239,20 +250,22 @@ impl<T: ToTypeCode> ToTypeCode for Vec<T> {
 }
 
 impl DbusWrite for Serial {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<(), io::Error>
-        where T1: io::Write,
-              T2: ByteOrder
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    where
+        T1: io::Write,
+        T2: ByteOrder,
     {
         writer.write_u32::<T2>(self.0)
     }
 }
 
-/// A DICT_ENTRY works exactly like a struct, but rather than parentheses
+/// /// A DICT_ENTRY works exactly like a struct, but rather than parentheses
 /// it uses curly braces, and it has more restrictions.
 impl<K, V, S> ToTypeCode for HashMap<K, V, S>
-where K: BasicType + ToTypeCode + Eq + Hash,
-      V: ToTypeCode,
-      S: BuildHasher
+where
+    K: BasicType + ToTypeCode + Eq + Hash,
+    V: ToTypeCode,
+    S: BuildHasher,
 {
     fn to_type_code(&self) -> TypeCode {
         let mut type_code = String::new();
