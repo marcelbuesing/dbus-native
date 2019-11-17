@@ -6,6 +6,84 @@ use crate::names::{ErrorName, InterfaceName, MemberName};
 use crate::type_system::{ObjectPath, Serial, Signature};
 use std::io;
 
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use crate::message::*;
+    use libdbus_sys;
+    use std::ffi::CString;
+    use std::io::BufWriter;
+
+    fn create_libdbus_signal() -> Vec<u8> {
+        let p = CString::new("/path").expect("CString::new failed");
+        let i = CString::new("com.example.MusicPlayer1").expect("CString::new failed");
+        let m = CString::new("member").expect("CString::new failed");
+
+        let msg =
+            unsafe { libdbus_sys::dbus_message_new_signal(p.as_ptr(), i.as_ptr(), m.as_ptr()) };
+
+        let mut marshalled_data: Vec<u8> = Vec::with_capacity(1024);
+        let raw_marshalled_data = marshalled_data.as_mut_ptr() as *mut *mut i8;
+
+        let mut marshalled_data_len: i32 = 0;
+        let raw_marshalled_data_len = &mut marshalled_data_len as *mut i32;
+
+        let sufficient_memory = unsafe {
+            libdbus_sys::dbus_message_marshal(msg, raw_marshalled_data, raw_marshalled_data_len)
+        };
+
+        if sufficient_memory < 1 {
+            panic!(format!(
+                "Insufficient memory for storing DBus message -> {}",
+                sufficient_memory
+            ));
+        }
+
+        unsafe {
+            println!("Length: {}", *raw_marshalled_data_len);
+        }
+
+        unsafe {
+            std::slice::from_raw_parts(
+                marshalled_data.as_mut_ptr(),
+                *raw_marshalled_data_len as usize,
+            )
+            .to_vec()
+            .to_owned()
+        }
+    }
+
+    #[test]
+    fn test_add() {
+        // dbus_message_marshal(msg: *mut DBusMessage, marshalled_data_p: *mut *mut c_char, len_p: *mut c_int) -> u32;
+
+        let v = create_libdbus_signal();
+        println!("DBUS Message Length(): {:X?}", v);
+
+        let header = Header {
+            endianess_flag: EndianessFlag::BigEndian,
+            message_type: MessageType::Signal,
+            flags: HeaderFlags::NO_AUTO_START,
+            major_protocol_version: MajorProtocolVersion(1),
+            length_message_body: 0,
+            serial: Serial(1),
+            header_fields: Vec::new(),
+        };
+
+        let body = Body {};
+
+        let m = Message { header, body };
+
+        let mut buff = std::io::Cursor::new(vec![0; 15]);
+        // let v = Vec::with_capacity(1024);
+        // let buffer_writer = BufWriter::new(v);
+        let len = m.write(&mut buff).unwrap();
+        println!("DBUS Message Length({}): {:X?}", len, buff);
+
+        assert_eq!(true, true);
+    }
+}
+
 /// The maximum length of a message, including header, header alignment padding,
 /// and body is 2 to the 27th power or 134217728 (128 MiB).
 /// Implementations must not send or accept messages exceeding this size.
@@ -24,22 +102,23 @@ struct Message {
 }
 
 impl Message {
-    fn write<T>(&self, writer: T) -> Result<(), io::Error>
+    fn write<T>(&self, writer: T) -> Result<u64, io::Error>
     where
         T: io::Write,
     {
+        let mut bytes_written = 0;
         let mut writer = DbusWriter::new(writer);
         match self.header.endianess_flag {
             EndianessFlag::LittleEndian => {
-                self.header.write::<T, LittleEndian>(&mut writer)?;
-                self.body.write::<T, LittleEndian>(&mut writer)?;
+                bytes_written += self.header.write::<T, LittleEndian>(&mut writer)?;
+                bytes_written += self.body.write::<T, LittleEndian>(&mut writer)?;
             }
             EndianessFlag::BigEndian => {
-                self.header.write::<T, BigEndian>(&mut writer)?;
-                self.body.write::<T, BigEndian>(&mut writer)?;
+                bytes_written += self.header.write::<T, BigEndian>(&mut writer)?;
+                bytes_written += self.body.write::<T, BigEndian>(&mut writer)?;
             }
         };
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
@@ -262,6 +341,6 @@ impl DbusWrite for Body {
         T1: io::Write,
         T2: ByteOrder,
     {
-        unimplemented!();
+        Ok(0)
     }
 }
