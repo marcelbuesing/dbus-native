@@ -106,12 +106,12 @@ pub struct ObjectPath(pub String);
 // TODO impl from str for ObjectPath see "Valid Object Paths"
 
 impl DbusWrite for ObjectPath {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
     {
-        writer.write_string::<T2>(&self.0)
+        writer.write_string::<T2>(&self.0, bytes_written)
     }
 }
 
@@ -131,12 +131,12 @@ pub struct Signature(pub String);
 // TODO impl from str for Signature see "Valid Signatures"
 
 impl DbusWrite for Signature {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
     {
-        writer.write_string::<T2>(&self.0)
+        writer.write_string::<T2>(&self.0, bytes_written)
     }
 }
 
@@ -250,12 +250,12 @@ impl<T: ToTypeCode> ToTypeCode for Vec<T> {
 }
 
 impl DbusWrite for Serial {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>) -> Result<u64, io::Error>
+    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
     {
-        writer.write_u32::<T2>(self.0)
+        writer.write_u32::<T2>(self.0, bytes_written)
     }
 }
 
