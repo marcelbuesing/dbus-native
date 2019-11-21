@@ -77,10 +77,10 @@ mod tests {
         let header = Header {
             endianess_flag: EndianessFlag::LittleEndian,
             message_type: MessageType::Signal,
-            flags: HeaderFlags::NO_AUTO_START,
+            flags: HeaderFlags::NO_REPLY_EXPECTED,
             major_protocol_version: MajorProtocolVersion(1),
             length_message_body: 0,
-            serial: Serial(1),
+            serial: Serial(0),
             header_fields: Vec::new(),
         };
 
@@ -122,12 +122,20 @@ impl Message {
         let mut writer = DbusWriter::new(writer);
         match self.header.endianess_flag {
             EndianessFlag::LittleEndian => {
-                bytes_written += self.header.write::<T, LittleEndian>(&mut writer, bytes_written)?;
-                bytes_written += self.body.write::<T, LittleEndian>(&mut writer, bytes_written)?;
+                bytes_written += self
+                    .header
+                    .write::<T, LittleEndian>(&mut writer, bytes_written)?;
+                bytes_written += self
+                    .body
+                    .write::<T, LittleEndian>(&mut writer, bytes_written)?;
             }
             EndianessFlag::BigEndian => {
-                bytes_written += self.header.write::<T, BigEndian>(&mut writer, bytes_written)?;
-                bytes_written += self.body.write::<T, BigEndian>(&mut writer, bytes_written)?;
+                bytes_written += self
+                    .header
+                    .write::<T, BigEndian>(&mut writer, bytes_written)?;
+                bytes_written += self
+                    .body
+                    .write::<T, BigEndian>(&mut writer, bytes_written)?;
             }
         };
         Ok(bytes_written)
@@ -167,7 +175,11 @@ enum MessageType {
 pub struct MajorProtocolVersion(pub u8);
 
 impl DbusWrite for MajorProtocolVersion {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
+    fn write<T1, T2>(
+        &self,
+        writer: &mut DbusWriter<T1>,
+        bytes_written: u64,
+    ) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -183,7 +195,7 @@ bitflags! {
         const NO_REPLY_EXPECTED = 0x1;
 
         /// The bus must not launch an owner for the destination name in response to this message.
-        const NO_AUTO_START = 0x1;
+        const NO_AUTO_START = 0x2;
 
         /// This flag may be set on a method call message to inform the receiving side that the caller
         /// is prepared to wait for interactive authorization, which might take a considerable time to complete.
@@ -272,7 +284,11 @@ enum HeaderField {
 }
 
 impl DbusWrite for HeaderField {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
+    fn write<T1, T2>(
+        &self,
+        writer: &mut DbusWriter<T1>,
+        bytes_written: u64,
+    ) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -283,11 +299,15 @@ impl DbusWrite for HeaderField {
                 "HeaderField::Invalid can not be marshaled!",
             )),
             HeaderField::Path(object_path) => object_path.write::<_, T2>(writer, bytes_written),
-            HeaderField::Interface(interface_name) => interface_name.write::<_, T2>(writer, bytes_written),
+            HeaderField::Interface(interface_name) => {
+                interface_name.write::<_, T2>(writer, bytes_written)
+            }
             HeaderField::Member(member_name) => member_name.write::<_, T2>(writer, bytes_written),
             HeaderField::ErrorName(error_name) => error_name.write::<_, T2>(writer, bytes_written),
             HeaderField::ReplySerial(serial) => serial.write::<_, T2>(writer, bytes_written),
-            HeaderField::Destination(destination) => writer.write_string::<T2>(destination, bytes_written),
+            HeaderField::Destination(destination) => {
+                writer.write_string::<T2>(destination, bytes_written)
+            }
             HeaderField::Sender(sender) => writer.write_string::<T2>(sender, bytes_written),
             HeaderField::Signature(signature) => signature.write::<_, T2>(writer, bytes_written),
             HeaderField::UnixFds(fd) => writer.write_u32::<T2>(*fd, bytes_written),
@@ -322,7 +342,11 @@ struct Header {
 }
 
 impl DbusWrite for Header {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
+    fn write<T1, T2>(
+        &self,
+        writer: &mut DbusWriter<T1>,
+        bytes_written: u64,
+    ) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,
@@ -348,7 +372,11 @@ impl DbusWrite for Header {
 struct Body {}
 
 impl DbusWrite for Body {
-    fn write<T1, T2>(&self, writer: &mut DbusWriter<T1>, bytes_written: u64) -> Result<u64, io::Error>
+    fn write<T1, T2>(
+        &self,
+        writer: &mut DbusWriter<T1>,
+        bytes_written: u64,
+    ) -> Result<u64, io::Error>
     where
         T1: io::Write,
         T2: ByteOrder,

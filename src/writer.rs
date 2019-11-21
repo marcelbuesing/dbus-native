@@ -105,19 +105,31 @@ impl<T: io::Write> DbusWriter<T> {
     }
 
     /// Exactly the same as STRING except the content must be a valid object path (see above).
-    pub fn write_object_path<T1: ByteOrder>(&mut self, object_path: ObjectPath, bytes_written: u64) -> Result<u64> {
+    pub fn write_object_path<T1: ByteOrder>(
+        &mut self,
+        object_path: ObjectPath,
+        bytes_written: u64,
+    ) -> Result<u64> {
         self.write_string::<T1>(&object_path.0, bytes_written)
     }
 
     /// The same as STRING except the length is a single byte (thus signatures
     /// have a maximum length of 255) and the content must be a valid signature (see above).
-    pub fn write_signature<T1: ByteOrder>(&mut self, signature: Signature, bytes_written: u64) -> Result<u64> {
+    pub fn write_signature<T1: ByteOrder>(
+        &mut self,
+        signature: Signature,
+        bytes_written: u64,
+    ) -> Result<u64> {
         self.write_string::<T1>(&signature.0, bytes_written)
     }
 
     /// A UINT32 giving the length of the array data in bytes, followed by alignment
     /// padding to the alignment boundary of the array element type, followed by each array element.
-    pub fn write_array<T1: ByteOrder, T2: DbusWrite>(&mut self, a: &[T2], bytes_written: u64) -> Result<u64> {
+    pub fn write_array<T1: ByteOrder, T2: DbusWrite>(
+        &mut self,
+        a: &[T2],
+        bytes_written: u64,
+    ) -> Result<u64> {
         let mut bytes_written = 0;
 
         bytes_written += self.write_u32::<T1>(a.len() as u32, bytes_written)?;
