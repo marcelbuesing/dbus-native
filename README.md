@@ -13,3 +13,5 @@ https://dbus.freedesktop.org/doc/dbus-specification.html
 
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fmarcelbuesing%2Fdbus-native.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fmarcelbuesing%2Fdbus-native?ref=badge_large)
+
+**NOTICE** This project is no longer maintained, please see the [zbus-crate](https://crates.io/crates/zbus) for Rust native dbus implementation.
